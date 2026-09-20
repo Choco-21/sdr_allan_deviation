@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.python-version
+.DS_Store
+*.wav
+inputs/
+outputs/

@@ -1,0 +1,19 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+PACKAGE_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = PACKAGE_DIR.parents[1]
+OUTPUTS_DIR = PROJECT_ROOT / "outputs"
+
+SOURCE_RATE_HZ = 27_000_000.0
+TARGET_RATE_HZ = 2_700_000.0
+REFERENCE_HZ = 1_420_405_000.0
+BIN_SECONDS = 0.001
+SIGNAL_PLOT_SECONDS = 0.0001
+MAX_TAU_SECONDS = 60.0
+TAUS: list[float] | None = None
+OBSERVATION_FREQUENCY = 1_420_405_000.0
+LOWPASS_HZ = 1_000_000.0
+HIGHPASS_HZ = 10_000.0
+SKIP_SECONDS = 0.1
