@@ -99,6 +99,30 @@ def plot_instantaneous_frequency(
     print(f"wrote instantaneous frequency plot to {plot_path}")
 
 
+def plot_instantaneous_frequency_psd(
+    freqs: np.ndarray,
+    psd: np.ndarray,
+    plot_path: Path,
+) -> None:
+    mask = freqs > 0.0
+    freqs = np.asarray(freqs)[mask]
+    psd = np.asarray(psd)[mask]
+    if freqs.size < 1 or not np.any(np.isfinite(psd) & (psd > 0.0)):
+        raise SystemExit("正の周波数 PSD がないためロググラフを描けません。")
+
+    fig, ax = plt.subplots(figsize=(10, 4))
+    ax.loglog(freqs, psd, linewidth=0.8)
+    ax.set_xlabel("Fourier frequency [Hz]")
+    ax.set_ylabel(r"$S_\nu(f)$ [Hz$^2$/Hz]")
+    ax.set_title("Instantaneous frequency PSD")
+    ax.grid(True, which="both", alpha=0.3)
+    fig.tight_layout()
+    plot_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(plot_path, dpi=150)
+    plt.close(fig)
+    print(f"wrote instantaneous frequency PSD plot to {plot_path}")
+
+
 def _plot_spectrum_axis(
     ax: plt.Axes,
     freqs: np.ndarray,

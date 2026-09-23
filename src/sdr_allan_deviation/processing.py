@@ -4,6 +4,7 @@ from pathlib import Path
 
 import allantools
 import numpy as np
+from scipy.signal import welch
 
 PERIODGRAM_NFFT = 65_536
 
@@ -57,6 +58,27 @@ def average_periodogram(
 def spectrum_peak(freqs: np.ndarray, psd: np.ndarray) -> tuple[float, float]:
     peak = int(np.argmax(psd))
     return float(freqs[peak]), float(psd[peak])
+
+
+def instantaneous_frequency_psd(
+    freq_hz: np.ndarray,
+    sample_rate: float,
+    nfft: int = PERIODGRAM_NFFT,
+) -> tuple[np.ndarray, np.ndarray]:
+    """平均を除いた瞬時周波数の片側 PSD（Hz²/Hz）。"""
+    data = np.asarray(freq_hz, dtype=np.float64)
+    if data.size < 8:
+        raise ValueError("not enough samples for frequency PSD")
+    if sample_rate <= 0.0:
+        raise ValueError("sample_rate must be > 0")
+    nperseg = min(int(nfft), data.size)
+    freqs, psd = welch(
+        data - np.mean(data),
+        fs=sample_rate,
+        nperseg=nperseg,
+        scaling="density",
+    )
+    return freqs, psd
 
 
 def binned_fractional_frequency(

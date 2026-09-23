@@ -21,6 +21,7 @@ from sdr_allan_deviation.data_loader import load_iq_decimated
 from sdr_allan_deviation.filters import apply_fir, design_lowpass_fir, highpass_filter_iq
 from sdr_allan_deviation.plots import (
     plot_instantaneous_frequency,
+    plot_instantaneous_frequency_psd,
     plot_iq_signal,
     plot_power_spectra,
 )
@@ -28,6 +29,7 @@ from sdr_allan_deviation.processing import (
     average_periodogram,
     binned_fractional_frequency,
     compute_and_plot_adev,
+    instantaneous_frequency_psd,
 )
 from sdr_allan_deviation.readers import load_iq_head
 
@@ -49,6 +51,7 @@ def main() -> None:
     signal_plot_path = out_dir / "signal_iq.png"
     spectrum_plot_path = out_dir / "power_spectrum.png"
     freq_plot_path = out_dir / "instantaneous_frequency.png"
+    freq_psd_plot_path = out_dir / "instantaneous_frequency_psd.png"
     adev_plot_path = out_dir / "allan_deviation.png"
 
     skip_source = max(0, int(round(SKIP_SECONDS * SOURCE_RATE_HZ)))
@@ -111,7 +114,10 @@ def main() -> None:
     data = binned_fractional_frequency(iq, sample_rate, REFERENCE_HZ, BIN_SECONDS)
     print(f"fractional-frequency bins: {data.size}, cadence={BIN_SECONDS:g} s")
 
-    plot_instantaneous_frequency(data * REFERENCE_HZ, BIN_SECONDS, freq_plot_path)
+    freq_hz = data * REFERENCE_HZ
+    plot_instantaneous_frequency(freq_hz, BIN_SECONDS, freq_plot_path)
+    freq_psd_freqs, freq_psd = instantaneous_frequency_psd(freq_hz, 1.0 / BIN_SECONDS)
+    plot_instantaneous_frequency_psd(freq_psd_freqs, freq_psd, freq_psd_plot_path)
 
     compute_and_plot_adev(
         data,
