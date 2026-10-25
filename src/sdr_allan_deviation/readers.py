@@ -1,42 +1,96 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import soundfile as sf
 
-# 1 フレーム = [RX1_I, RX1_Q, RX2_I, RX2_Q]
-INTS_PER_FRAME = 4
-BYTES_PER_FRAME = INTS_PER_FRAME * 2
 CHUNK_FRAMES = 2_000_000
+INT16_SCALE = 32_768.0
 
 
-def _raw_frames_to_iq(raw: np.ndarray) -> np.ndarray:
-    n_frames = raw.size // INTS_PER_FRAME
-    raw = raw[: n_frames * INTS_PER_FRAME]
-    i = raw[0::INTS_PER_FRAME].astype(np.float32)
-    q = raw[1::INTS_PER_FRAME].astype(np.float32)
-    return i + 1j * q
+@dataclass(frozen=True)
+class InterleavedIQFormat:
+    name: str
+    dtype: np.dtype
+    values_per_frame: int
+    i_index: int
+    q_index: int
+    layout: str
+
+    @property
+    def bytes_per_frame(self) -> int:
+        return self.dtype.itemsize * self.values_per_frame
 
 
-def _iter_raw_iq_chunks(path: Path) -> Iterator[np.ndarray]:
+BINARY_IQ_FORMATS = {
+    ".raw": InterleavedIQFormat(
+        name="legacy dual-channel int16",
+        dtype=np.dtype("<i2"),
+        values_per_frame=4,
+        i_index=0,
+        q_index=1,
+        layout="[RX1_I, RX1_Q, RX2_I, RX2_Q]",
+    ),
+    ".dat": InterleavedIQFormat(
+        name="USRP sc16",
+        dtype=np.dtype("<i2"),
+        values_per_frame=2,
+        i_index=0,
+        q_index=1,
+        layout="[I, Q]",
+    ),
+}
+SUPPORTED_SUFFIXES = (*BINARY_IQ_FORMATS, ".wav")
+
+
+def _binary_format(path: Path) -> InterleavedIQFormat:
+    try:
+        return BINARY_IQ_FORMATS[path.suffix.lower()]
+    except KeyError:
+        raise ValueError(f"unsupported binary IQ format: {path.suffix.lower()}") from None
+
+
+def _validate_binary_size(path: Path, iq_format: InterleavedIQFormat) -> int:
     file_size = path.stat().st_size
-    if file_size < BYTES_PER_FRAME:
+    if file_size < iq_format.bytes_per_frame:
         raise ValueError("not enough data to form one IQ frame")
-    offset = 0
-    while offset < file_size:
-        raw = np.fromfile(
-            path,
-            dtype=np.int16,
-            count=CHUNK_FRAMES * INTS_PER_FRAME,
-            offset=offset,
+    remainder = file_size % iq_format.bytes_per_frame
+    if remainder:
+        raise ValueError(
+            f"{path} has {remainder} trailing byte(s); "
+            f"{iq_format.name} requires {iq_format.bytes_per_frame} bytes per frame"
         )
-        if raw.size < INTS_PER_FRAME:
-            break
-        n_frames = raw.size // INTS_PER_FRAME
-        yield _raw_frames_to_iq(raw)
-        offset += n_frames * BYTES_PER_FRAME
+    return file_size // iq_format.bytes_per_frame
+
+
+def _interleaved_frames_to_iq(
+    raw: np.ndarray,
+    iq_format: InterleavedIQFormat,
+) -> np.ndarray:
+    if raw.size % iq_format.values_per_frame:
+        raise ValueError(f"incomplete {iq_format.name} IQ frame")
+    frames = raw.reshape(-1, iq_format.values_per_frame)
+    i = frames[:, iq_format.i_index].astype(np.float32) / INT16_SCALE
+    q = frames[:, iq_format.q_index].astype(np.float32) / INT16_SCALE
+    return (i + 1j * q).astype(np.complex64, copy=False)
+
+
+def _iter_binary_iq_chunks(path: Path) -> Iterator[np.ndarray]:
+    iq_format = _binary_format(path)
+    _validate_binary_size(path, iq_format)
+    with path.open("rb") as file:
+        while True:
+            raw = np.fromfile(
+                file,
+                dtype=iq_format.dtype,
+                count=CHUNK_FRAMES * iq_format.values_per_frame,
+            )
+            if raw.size == 0:
+                break
+            yield _interleaved_frames_to_iq(raw, iq_format)
 
 
 def _iter_wav_iq_chunks(
@@ -71,21 +125,23 @@ def _iter_wav_iq_chunks(
             yield data[start : start + CHUNK_FRAMES]
 
 
-def _load_raw_head(
+def _load_binary_head(
     path: Path,
     source_rate_hz: float,
     num_samples: int,
     start_sample: int = 0,
 ) -> tuple[np.ndarray, float]:
+    iq_format = _binary_format(path)
+    _validate_binary_size(path, iq_format)
     raw = np.fromfile(
         path,
-        dtype=np.int16,
-        count=num_samples * INTS_PER_FRAME,
-        offset=start_sample * BYTES_PER_FRAME,
+        dtype=iq_format.dtype,
+        count=num_samples * iq_format.values_per_frame,
+        offset=start_sample * iq_format.bytes_per_frame,
     )
-    if raw.size < INTS_PER_FRAME:
+    if raw.size < iq_format.values_per_frame:
         raise ValueError("not enough data to form one IQ frame")
-    return _raw_frames_to_iq(raw), float(source_rate_hz)
+    return _interleaved_frames_to_iq(raw, iq_format), float(source_rate_hz)
 
 
 def _load_wav_head(
@@ -123,13 +179,54 @@ def _load_wav_head(
     return iq[:, 0] + 1j * iq[:, 1], float(fs)
 
 
+def print_input_info(path: Path, source_rate_hz: float) -> None:
+    """入力形式、レート、長さなどを標準出力に出す。"""
+    suffix = path.suffix.lower()
+    if suffix in BINARY_IQ_FORMATS:
+        iq_format = _binary_format(path)
+        frames = _validate_binary_size(path, iq_format)
+        duration_s = frames / source_rate_hz
+        print(f"input info: {path}")
+        print(f"  format: {iq_format.name}")
+        print(f"  dtype: {iq_format.dtype.str}")
+        print(f"  layout: {iq_format.layout}")
+        print(f"  samplerate: {source_rate_hz:g} Hz (from config)")
+        print(f"  frames: {frames}")
+        print(f"  duration: {duration_s:g} s")
+        print(f"  file size: {path.stat().st_size} bytes")
+        return
+    if suffix != ".wav":
+        raise ValueError(f"unsupported IQ format: {suffix}")
+    try:
+        with sf.SoundFile(path) as file:
+            duration_s = file.frames / file.samplerate if file.samplerate else 0.0
+            print(f"input info: {path}")
+            print(f"  format: {file.format} ({file.format_info})")
+            print(f"  subtype: {file.subtype} ({file.subtype_info})")
+            print(f"  endian: {file.endian}")
+            print(f"  samplerate: {file.samplerate} Hz")
+            if file.samplerate != source_rate_hz:
+                print(f"  analysis samplerate: {source_rate_hz:g} Hz (from config)")
+            print(f"  channels: {file.channels}")
+            print(f"  frames: {file.frames}")
+            print(f"  duration: {duration_s:g} s")
+            extra = (file.extra_info or "").strip()
+            if extra:
+                print("  extra_info:")
+                for line in extra.splitlines():
+                    print(f"    {line}")
+    except sf.LibsndfileError as exc:
+        print(f"input info: {path}")
+        print(f"  (wav として読めません: {exc})")
+
+
 def iter_iq_chunks(path: Path, source_rate_hz: float) -> Iterator[np.ndarray]:
     """拡張子に応じて複素 IQ チャンクを返す。新しい形式はここに足す。"""
     if not path.exists():
         raise FileNotFoundError(f"{path} が見つかりません。")
     suffix = path.suffix.lower()
-    if suffix == ".raw":
-        yield from _iter_raw_iq_chunks(path)
+    if suffix in BINARY_IQ_FORMATS:
+        yield from _iter_binary_iq_chunks(path)
     elif suffix == ".wav":
         yield from _iter_wav_iq_chunks(path, source_rate_hz)
     else:
@@ -150,8 +247,8 @@ def load_iq_head(
     if not path.exists():
         raise FileNotFoundError(f"{path} が見つかりません。")
     suffix = path.suffix.lower()
-    if suffix == ".raw":
-        return _load_raw_head(path, source_rate_hz, num_samples, start_sample)
+    if suffix in BINARY_IQ_FORMATS:
+        return _load_binary_head(path, source_rate_hz, num_samples, start_sample)
     if suffix == ".wav":
         return _load_wav_head(path, source_rate_hz, num_samples, start_sample)
     raise ValueError(f"unsupported IQ format: {suffix}")

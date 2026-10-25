@@ -31,12 +31,12 @@ from sdr_allan_deviation.processing import (
     compute_and_plot_adev,
     instantaneous_frequency_psd,
 )
-from sdr_allan_deviation.readers import load_iq_head
+from sdr_allan_deviation.readers import load_iq_head, print_input_info
 
 
 def parse_args() -> Path:
     parser = argparse.ArgumentParser(description="IQ Allan deviation analysis")
-    parser.add_argument("input", type=Path, help="IQ input (.raw or .wav)")
+    parser.add_argument("input", type=Path, help="IQ input (.wav, .raw, or .dat)")
     args = parser.parse_args()
     path = args.input.expanduser().resolve()
     if not path.exists():
@@ -46,6 +46,7 @@ def parse_args() -> Path:
 
 def main() -> None:
     input_path = parse_args()
+    print_input_info(input_path, SOURCE_RATE_HZ)
     out_dir = OUTPUTS_DIR / input_path.name
     out_dir.mkdir(parents=True, exist_ok=True)
     signal_plot_path = out_dir / "signal_iq.png"

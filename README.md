@@ -20,17 +20,23 @@ flowchart LR
 
 ## 使用方法
 
-1. データをwav形式で保存する。
+1. IQデータを以下のいずれかの形式で保存する。
 
-2. ```src/config.py```に適切なパラメータを設定する。
+- `.wav`: 2チャンネル（1ch = I、2ch = Q）
+- `.raw`: little-endian int16 の `[RX1_I, RX1_Q, RX2_I, RX2_Q]`
+- `.dat`: USRPのヘッダなし little-endian sc16（`[I, Q]`）
 
-- SOURCE_RATE_HZ: SDRのサンプリングレート
+どの形式も読み込み後は `complex64`、振幅は概ね -1〜1 に正規化される。
+
+2. ```src/sdr_allan_deviation/config.py```に適切なパラメータを設定する。
+
+- SOURCE_RATE_HZ: 入力IQのサンプリングレート。ヘッダのない `.raw` / `.dat` では必須
 - TARGET_RATE_HZ: データを保存するレート
 - REFERENCE_HZ: 周波数標準の周波数
 - BIN_SECONDS: データをビンにする時間
 - SIGNAL_PLOT_SECONDS: 信号をプロットする時間
 - MAX_TAU_SECONDS: アラン偏差を評価する最大時間
-- TAU_SECONDS: アラン偏差を評価する時間
+- TAUS: アラン偏差を評価する時間。`None` の場合はオクターブ間隔
 - OBSERVATION_FREQUENCY: 周波数標準の周波数
 - LOWPASS_HZ: 低域フィルタのカットオフ周波数
 - HIGHPASS_HZ: 高域フィルタのカットオフ周波数
@@ -39,8 +45,11 @@ flowchart LR
 3. 以下のコマンドを実行する。
 
 ```bash
-uv run main path/to/input.wav
+uv run main inputs/path/to/input.wav
 ```
+
+20 MS/sで保存したヘッダなしsc16の場合は `SOURCE_RATE_HZ = 20_000_000.0` として
+`uv run main inputs/path/to/input.dat` を実行する。
 
 4. 結果が```outputs/```に保存される。
 
