@@ -5,6 +5,7 @@ from pathlib import Path
 
 from sdr_allan_deviation.config import (
     BIN_SECONDS,
+    END_SKIP_SECONDS,
     HIGHPASS_HZ,
     LOWPASS_HZ,
     MAX_TAU_SECONDS,
@@ -12,8 +13,8 @@ from sdr_allan_deviation.config import (
     OUTPUTS_DIR,
     REFERENCE_HZ,
     SIGNAL_PLOT_SECONDS,
-    SKIP_SECONDS,
     SOURCE_RATE_HZ,
+    START_SKIP_SECONDS,
     TARGET_RATE_HZ,
     TAUS,
 )
@@ -55,7 +56,7 @@ def main() -> None:
     freq_psd_plot_path = out_dir / "instantaneous_frequency_psd.png"
     adev_plot_path = out_dir / "allan_deviation.png"
 
-    skip_source = max(0, int(round(SKIP_SECONDS * SOURCE_RATE_HZ)))
+    skip_source = max(0, int(round(START_SKIP_SECONDS * SOURCE_RATE_HZ)))
     head_samples = max(2, int(round(SIGNAL_PLOT_SECONDS * SOURCE_RATE_HZ)))
     iq_head, source_rate = load_iq_head(
         input_path,
@@ -83,17 +84,20 @@ def main() -> None:
         LOWPASS_HZ,
         highpass_hz=HIGHPASS_HZ,
     )
-    skip = max(0, int(round(SKIP_SECONDS * sample_rate)))
-    if skip >= iq.size:
+    start_skip = max(0, int(round(START_SKIP_SECONDS * sample_rate)))
+    end_skip = max(0, int(round(END_SKIP_SECONDS * sample_rate)))
+    if start_skip + end_skip >= iq.size:
         raise SystemExit(
-            f"skip {SKIP_SECONDS:g} s がデータ長 {iq.size / sample_rate:g} s 以上です。"
+            f"先頭 {START_SKIP_SECONDS:g} s と末尾 {END_SKIP_SECONDS:g} s の"
+            f"合計がデータ長 {iq.size / sample_rate:g} s 以上です。"
         )
-    if skip:
-        iq = iq[skip:]
+    stop = iq.size - end_skip if end_skip else None
+    iq = iq[start_skip:stop]
     duration_s = iq.size / sample_rate
     print(f"input: {input_path}")
     print(f"output: {out_dir}")
-    print(f"skipped first {SKIP_SECONDS:g} s")
+    print(f"skipped first {START_SKIP_SECONDS:g} s")
+    print(f"skipped last {END_SKIP_SECONDS:g} s")
     print(f"duration: {duration_s:g} s ({iq.size} samples)")
     print(
         f"sample_rate={sample_rate:g} Hz "

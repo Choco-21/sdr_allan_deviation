@@ -40,7 +40,8 @@ flowchart LR
 - OBSERVATION_FREQUENCY: 周波数標準の周波数
 - LOWPASS_HZ: 低域フィルタのカットオフ周波数
 - HIGHPASS_HZ: 高域フィルタのカットオフ周波数
-- SKIP_SECONDS: データの先頭をスキップする時間
+- START_SKIP_SECONDS: データの先頭をスキップする時間
+- END_SKIP_SECONDS: データの末尾をスキップする時間
 
 3. 以下のコマンドを実行する。
 
